@@ -358,11 +358,6 @@ class TransactionsViewController: UIViewController, UITableViewDelegate, UITable
 
 		                		syncView.timestamp = reduxState.walletState.lastBlockTimestamp
 		                		self.shouldBeSyncing = true
-
-		                		if reduxState.walletState.syncProgress >= 0.99 {
-		                			self.shouldBeSyncing = false
-		                			self.syncingHeaderView = nil
-		                		}
 		                	}
 
 		                	self.reload()
