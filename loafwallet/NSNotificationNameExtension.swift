@@ -2,6 +2,8 @@ import Foundation
 
 public extension NSNotification.Name {
 	static let walletBalanceChangedNotification = NSNotification.Name("WalletBalanceChanged")
+	static let walletBlockNotification = NSNotification.Name("WalletBlock")
+	static let walletTxNotification = NSNotification.Name("WalletTx")
 	static let walletTxStatusUpdateNotification = NSNotification.Name("WalletTxStatusUpdate")
 	static let walletTxRejectedNotification = NSNotification.Name("WalletTxRejected")
 	static let walletSyncStartedNotification = NSNotification.Name("WalletSyncStarted")

@@ -135,7 +135,7 @@ class BuyTableViewController: UITableViewController, SFSafariViewControllerDeleg
 
 	private let uuidString: String = UIDevice.current.identifierForVendor?.uuidString ?? ""
 
-	private let currentWalletAddress: String = WalletManager.sharedInstance.wallet?.receiveAddress ?? ""
+	private var currentWalletAddress: String { walletManager?.wallet?.receiveAddress ?? "" }
 
 	@objc private func didChangeCurrencyMoonpay() {
 		if let code = PartnerFiatOptions(rawValue: moonpaySegmentedControl.selectedSegmentIndex)?.description

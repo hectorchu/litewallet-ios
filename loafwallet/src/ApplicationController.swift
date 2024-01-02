@@ -29,6 +29,7 @@ class ApplicationController: Subscriber, Trackable {
 	private var launchURL: URL?
 	private var hasPerformedWalletDependentInitialization = false
 	private var didInitWallet = false
+	private let lnd = LndManager(testnet: E.isTestnet)
 
 	init() {
 		transitionDelegate = ModalTransitionDelegate(type: .transactionDetail, store: store)
@@ -40,7 +41,7 @@ class ApplicationController: Subscriber, Trackable {
 	}
 
 	private func initWallet() {
-		walletManager = try? WalletManager(store: store, dbPath: nil)
+		walletManager = try? WalletManager(store: store, lnd: lnd, dbPath: nil)
 		_ = walletManager?.wallet // attempt to initialize wallet
 		DispatchQueue.main.async {
 			self.didInitWallet = true
@@ -80,12 +81,13 @@ class ApplicationController: Subscriber, Trackable {
 			guard let trigger = $0 else { return }
 			if case let .reinitWalletManager(callback) = trigger {
 				if let callback = callback {
+					NotificationCenter.default.post(name: .walletSyncStoppedNotification, object: nil)
 					self.store.removeAllSubscriptions()
 					self.store.perform(action: Reset())
 					self.setup()
 					DispatchQueue.walletQueue.async {
 						do {
-							self.walletManager = try WalletManager(store: self.store, dbPath: nil)
+							self.walletManager = try WalletManager(store: self.store, lnd: self.lnd, dbPath: nil)
 							_ = self.walletManager?.wallet // attempt to initialize wallet
 						} catch {
 							assertionFailure("Error creating new wallet: \(error)")
@@ -247,6 +249,26 @@ class ApplicationController: Subscriber, Trackable {
 		exchangeUpdater?.refresh(completion: {
 			// Update values
 		})
+		initLnd()
+	}
+
+	private func initLnd() {
+		DispatchQueue.lndQueue.async {
+			waitForAsync {
+				try? await self.lnd.start()
+			}
+			DispatchQueue.main.async {
+				NotificationCenter.default.post(name: .walletSyncStartedNotification, object: nil)
+			}
+			DispatchQueue.walletQueue.async {
+				waitForAsync {
+					try? await self.walletManager?.initWallet()
+				}
+				DispatchQueue.main.async {
+					NotificationCenter.default.post(name: .walletBalanceChangedNotification, object: nil)
+				}
+			}
+		}
 	}
 
 	private func addWalletCreationListener() {

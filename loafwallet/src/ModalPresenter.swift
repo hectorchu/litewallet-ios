@@ -690,13 +690,15 @@ class ModalPresenter: Subscriber, Trackable {
 				self.topViewController?.present(activity, animated: true, completion: nil)
 
 				group.enter()
-				DispatchQueue.walletQueue.async {
-					self.walletManager?.peerManager?.disconnect()
+				DispatchQueue.lndQueue.async {
+					waitForAsync {
+						try? await self.walletManager?.lnd.stop()
+					}
 					group.leave()
 				}
 
 				group.enter()
-				DispatchQueue.walletQueue.asyncAfter(deadline: .now() + 2.0) {
+				DispatchQueue.lndQueue.asyncAfter(deadline: .now() + 2.0) {
 					print("Pausing to show 'Wiping' Dialog")
 					group.leave()
 				}

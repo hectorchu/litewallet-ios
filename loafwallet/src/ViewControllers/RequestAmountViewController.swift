@@ -10,7 +10,7 @@ class RequestAmountViewController: UIViewController {
 	var presentEmail: PresentShare?
 	var presentText: PresentShare?
 
-	init(wallet: BRWallet, store: Store) {
+	init(wallet: LndWallet, store: Store) {
 		self.wallet = wallet
 		amountView = AmountViewController(store: store, isPinPadExpandedAtLaunch: true, isRequesting: true)
 		super.init(nibName: nil, bundle: nil)
@@ -26,7 +26,7 @@ class RequestAmountViewController: UIViewController {
 	private let sharePopout = InViewAlert(type: .secondary)
 	private let border = UIView()
 	private var topSharePopoutConstraint: NSLayoutConstraint?
-	private let wallet: BRWallet
+	private let wallet: LndWallet
 
 	// MARK: - PinPad State
 

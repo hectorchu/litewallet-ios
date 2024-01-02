@@ -5,7 +5,7 @@ import UIKit
 enum SendResult {
 	case success
 	case creationError(String)
-	case publishFailure(BRPeerManagerError)
+	case publishFailure(Error)
 }
 
 class Sender {
@@ -19,7 +19,7 @@ class Sender {
 
 	// MARK: - Public Variables
 
-	var transaction: BRTxRef?
+	var transaction: LndTransaction?
 
 	var rate: Rate?
 
@@ -144,7 +144,7 @@ class Sender {
 	// This func needs to be REFACTORED as it violates OOP and intertangles TX and Pin authentication
 	// This means it should be 2 functions.
 	// VerifyPIN and VerifyTX
-	private func verifyPin(tx: BRTxRef,
+	private func verifyPin(tx: LndTransaction,
 	                       withFunction: (@escaping (String) -> Bool) -> Void,
 	                       completion: @escaping (SendResult) -> Void)
 	{
@@ -189,16 +189,19 @@ class Sender {
 		guard let tx = transaction else { assertionFailure("publish failure"); return }
 		DispatchQueue.walletQueue.async { [weak self] in
 			guard let myself = self else { assertionFailure("myself didn't exist"); return }
-			myself.walletManager.peerManager?.publishTx(tx, completion: { _, error in
-				DispatchQueue.main.async {
-					if let error = error {
-						completion(.publishFailure(error))
-					} else {
+			waitForAsync {
+				do {
+					try await myself.walletManager.lnd.publishTransaction(transaction: tx)
+					DispatchQueue.main.async {
 						myself.setMetaData()
 						completion(.success)
 					}
+				} catch {
+					DispatchQueue.main.async {
+						completion(.publishFailure(error))
+					}
 				}
-			})
+			}
 		}
 	}
 

@@ -86,15 +86,13 @@ open class TxMetaData: BRKVStoreObject, BRCoding {
 	}
 
 	/// Create new transaction metadata
-	public init(transaction: BRTransaction, exchangeRate: Double, exchangeRateCurrency: String, feeRate: Double,
+	public init(transaction: LndTransaction, exchangeRate: Double, exchangeRateCurrency: String, feeRate: Double,
 	            deviceId: String, comment: String? = nil)
 	{
-		print("[BRTxMetadataObject] new \(transaction.txHash.txKey)")
-		super.init(key: transaction.txHash.txKey, version: 0, lastModified: Date(), deleted: false, data: Data())
+		print("[BRTxMetadataObject] new \(transaction.txHash)")
+		super.init(key: transaction.txHash, version: 0, lastModified: Date(), deleted: false, data: Data())
 		blockHeight = Int(transaction.blockHeight)
 		created = Date()
-		var txn = transaction
-		size = BRTransactionSize(&txn)
 		self.exchangeRate = exchangeRate
 		self.exchangeRateCurrency = exchangeRateCurrency
 		self.feeRate = feeRate

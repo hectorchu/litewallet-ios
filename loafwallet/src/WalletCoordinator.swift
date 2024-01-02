@@ -21,6 +21,7 @@ class WalletCoordinator: Subscriber, Trackable {
 	private var backgroundTaskId: UIBackgroundTaskIdentifier?
 	private var reachability = ReachabilityMonitor()
 	private var retryTimer: RetryTimer?
+	private var prevBestHeaderTimestamp: TimeInterval?
 
 	init(walletManager: WalletManager, store: Store) {
 		self.walletManager = walletManager
@@ -43,10 +44,26 @@ class WalletCoordinator: Subscriber, Trackable {
 	}
 
 	@objc private func updateProgress() {
-		DispatchQueue.walletQueue.async {
-			guard let progress = self.walletManager.peerManager?.syncProgress(fromStartHeight: self.lastBlockHeight), let timestamp = self.walletManager.peerManager?.lastBlockTimestamp else { return }
-			DispatchQueue.main.async {
-				self.store.perform(action: WalletChange.setProgress(progress: progress, timestamp: timestamp))
+		DispatchQueue.lndQueue.async {
+			waitForAsync {
+				guard let info = try? await self.walletManager.lnd.getInfo() else { return }
+				guard let recovery = try? await self.walletManager.lnd.getRecoveryInfo() else { return }
+				DispatchQueue.main.async {
+					if self.prevBestHeaderTimestamp == nil {
+						self.prevBestHeaderTimestamp = info.bestHeaderTimestamp
+					}
+					if let recovery = recovery, recovery > 0 {
+						let startTime = self.walletManager.earliestKeyTime + NSTimeIntervalSince1970
+						let timestamp = startTime + recovery * (Date().timeIntervalSince1970 - startTime)
+						self.store.perform(action: WalletChange.setProgress(progress: max(recovery, 0.02), timestamp: UInt32(timestamp)))
+					} else if !info.synced {
+						let progress = (info.bestHeaderTimestamp - self.prevBestHeaderTimestamp!) / (Date().timeIntervalSince1970 - self.prevBestHeaderTimestamp!)
+						self.store.perform(action: WalletChange.setProgress(progress: max(progress, 0.02), timestamp: UInt32(info.bestHeaderTimestamp)))
+					} else {
+						self.lastBlockHeight = info.blockHeight
+						self.onSyncStop(notification: Notification(name: .walletSyncStoppedNotification))
+					}
+				}
 			}
 		}
 		updateBalance()
@@ -86,9 +103,6 @@ class WalletCoordinator: Subscriber, Trackable {
 		}
 		retryTimer?.stop()
 		retryTimer = nil
-		if let height = walletManager.peerManager?.lastBlockHeight {
-			lastBlockHeight = height
-		}
 		progressTimer?.invalidate()
 		progressTimer = nil
 		store.perform(action: WalletChange.setSyncingState(.success))
@@ -131,49 +145,52 @@ class WalletCoordinator: Subscriber, Trackable {
 		}
 	}
 
-	func makeTransactionViewModels(transactions: [BRTxRef?], walletManager: WalletManager, kvStore: BRReplicatedKVStore?, rate: Rate?) -> [Transaction]
+	func makeTransactionViewModels(transactions: [LndTransaction], walletManager: WalletManager, kvStore: BRReplicatedKVStore?, rate: Rate?) -> [Transaction]
 	{
-		return transactions.compactMap { $0 }.sorted {
-			if $0.pointee.timestamp == 0 {
-				return true
-			} else if $1.pointee.timestamp == 0 {
-				return false
-			} else {
-				return $0.pointee.timestamp > $1.pointee.timestamp
-			}
-		}.compactMap {
+		return transactions.reversed().compactMap {
 			Transaction($0, walletManager: walletManager, kvStore: kvStore, rate: rate)
 		}
 	}
 
 	private func addWalletObservers() {
+		weak var myself = self
+
 		NotificationCenter.default.addObserver(forName: .walletBalanceChangedNotification, object: nil, queue: nil, using: { _ in
-			self.updateBalance()
-			self.requestTxUpdate()
+			myself?.updateBalance()
+			myself?.requestTxUpdate()
+		})
+
+		NotificationCenter.default.addObserver(forName: .walletBlockNotification, object: nil, queue: nil, using: { _ in
+			myself?.requestTxUpdate()
+		})
+
+		NotificationCenter.default.addObserver(forName: .walletTxNotification, object: nil, queue: nil, using: { _ in
+			myself?.updateBalance()
+			myself?.requestTxUpdate()
 		})
 
 		NotificationCenter.default.addObserver(forName: .walletTxStatusUpdateNotification, object: nil, queue: nil, using: { _ in
-			self.requestTxUpdate()
+			myself?.requestTxUpdate()
 		})
 
 		NotificationCenter.default.addObserver(forName: .walletTxRejectedNotification, object: nil, queue: nil, using: { note in
 			guard let recommendRescan = note.userInfo?["recommendRescan"] as? Bool else { return }
-			self.requestTxUpdate()
+			myself?.requestTxUpdate()
 			if recommendRescan {
-				self.store.perform(action: RecommendRescan.set(recommendRescan))
+				myself?.store.perform(action: RecommendRescan.set(recommendRescan))
 			}
 		})
 
 		NotificationCenter.default.addObserver(forName: .walletSyncStartedNotification, object: nil, queue: nil, using: { _ in
-			self.onSyncStart()
+			myself?.onSyncStart()
 		})
 
 		NotificationCenter.default.addObserver(forName: .walletSyncStoppedNotification, object: nil, queue: nil, using: { note in
-			self.onSyncStop(notification: note)
+			myself?.onSyncStop(notification: note)
 		})
 
 		NotificationCenter.default.addObserver(forName: .languageChangedNotification, object: nil, queue: nil, using: { _ in
-			self.updateTransactions()
+			myself?.updateTransactions()
 		})
 	}
 

@@ -19,6 +19,16 @@ func guardProtected(queue: DispatchQueue, callback: @escaping () -> Void) {
 	}
 }
 
+func waitForAsync(callback: @escaping () async -> Void) {
+	let group = DispatchGroup()
+	group.enter()
+	Task {
+		await callback()
+		group.leave()
+	}
+	group.wait()
+}
+
 func strongify<Context: AnyObject>(_ context: Context, closure: @escaping (Context) -> Void) -> () -> Void
 {
 	return { [weak context] in

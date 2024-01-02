@@ -380,12 +380,6 @@ class TransactionsViewController: UIViewController, UITableViewDelegate, UITable
 		store.subscribe(self, selector: { $0.walletState.syncState != $1.walletState.syncState },
 		                callback: { reduxState in
 
-		                	guard let _ = self.walletManager?.peerManager
-		                	else {
-		                		assertionFailure("PEER MANAGER Not initialized")
-		                		return
-		                	}
-
 		                	if reduxState.walletState.syncState == .syncing {
 		                		self.shouldBeSyncing = true
 		                		self.initSyncingHeaderView(reduxState: reduxState, completion: {

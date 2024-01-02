@@ -38,7 +38,7 @@ class TransferAmountViewModel: ObservableObject {
 		return walletType == .litewallet ? cardAddress : litewalletAddress
 	}
 
-	var transaction: BRTxRef?
+	var transaction: LndTransaction?
 
 	init(walletType: WalletType,
 	     litewalletBalance: Double,

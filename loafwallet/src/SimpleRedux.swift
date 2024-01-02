@@ -123,10 +123,16 @@ class Store {
 	}
 
 	func trigger(name: TriggerName) {
-		triggers
-			.flatMap { $0.value }
-			.filter { $0.name == name }
-			.forEach { $0.callback(name) }
+		DispatchQueue.main.async {
+			self.triggers
+				.flatMap { $0.value }
+				.filter { $0.name == name }
+				.forEach { tr in
+					DispatchQueue.main.async {
+						tr.callback(name)
+					}
+				}
+		}
 	}
 
 	// Subscription callback is immediately called with current State value on subscription
@@ -161,8 +167,11 @@ class Store {
 	}
 
 	func unsubscribe(_ subscriber: Subscriber) {
-		subscriptions.removeValue(forKey: subscriber.hashValue)
-		triggers.removeValue(forKey: subscriber.hashValue)
+		let key = subscriber.hashValue
+		DispatchQueue.main.async {
+			self.subscriptions.removeValue(forKey: key)
+			self.triggers.removeValue(forKey: key)
+		}
 	}
 
 	// MARK: - Private

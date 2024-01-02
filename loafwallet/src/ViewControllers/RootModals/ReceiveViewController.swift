@@ -14,7 +14,7 @@ class ReceiveViewController: UIViewController, Subscriber, Trackable {
 	var presentEmail: PresentShare?
 	var presentText: PresentShare?
 
-	init(wallet: BRWallet, store: Store, isRequestAmountVisible: Bool) {
+	init(wallet: LndWallet, store: Store, isRequestAmountVisible: Bool) {
 		self.wallet = wallet
 		self.isRequestAmountVisible = isRequestAmountVisible
 		self.store = store
@@ -33,7 +33,7 @@ class ReceiveViewController: UIViewController, Subscriber, Trackable {
 	private let request = ShadowButton(title: S.Receive.request.localize(), type: .flatLitecoinBlue)
 	private let addressButton = UIButton(type: .system)
 	private var topSharePopoutConstraint: NSLayoutConstraint?
-	private let wallet: BRWallet
+	private let wallet: LndWallet
 	private let store: Store
 	private var balance: UInt64? {
 		didSet {

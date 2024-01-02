@@ -1,6 +1,7 @@
 import BRCore
 import FirebaseAnalytics
 import Foundation
+import HdWalletKit
 import LocalAuthentication
 import sqlite3
 import UIKit
@@ -38,7 +39,7 @@ enum TransferCardResult {
 extension WalletManager: WalletAuthenticator {
 	private static var failedPins = [String]()
 
-	convenience init(store: Store, dbPath: String? = nil) throws {
+	convenience init(store: Store, lnd: LndManager, dbPath: String? = nil) throws {
 		if !UIApplication.shared.isProtectedDataAvailable {
 			throw NSError(domain: NSOSStatusErrorDomain, code: Int(errSecNotAvailable))
 		}
@@ -62,6 +63,7 @@ extension WalletManager: WalletAuthenticator {
 			              earliestKeyTime: 0,
 			              dbPath: dbPath,
 			              store: store,
+			              lnd: lnd,
 			              fpRate: FalsePositiveRates.semiPrivate.rawValue)
 			return
 		}
@@ -77,7 +79,22 @@ extension WalletManager: WalletAuthenticator {
 		              earliestKeyTime: earliestKeyTime,
 		              dbPath: dbPath,
 		              store: store,
+		              lnd: lnd,
 		              fpRate: FalsePositiveRates.semiPrivate.rawValue)
+	}
+
+	func initWallet() async throws {
+		guard let mnemonic: String = try keychainItem(key: KeychainKey.mnemonic) else { return }
+		if !lnd.walletExists {
+			guard let seed = Mnemonic.seed(mnemonic: mnemonic.components(separatedBy: " ")) else { return }
+			let privateKey = HDPrivateKey(seed: seed, xPrivKey: E.isTestnet ? 0x0435_8394 : 0x0488_ADE4)
+			try await lnd.initWallet(password: mnemonic, xprv: privateKey.extended(), creationTime: earliestKeyTime + NSTimeIntervalSince1970, recoveryWindow: 10)
+		} else {
+			try await lnd.unlockWallet(password: mnemonic, recoveryWindow: 10)
+		}
+		DispatchQueue.main.async {
+			self.didInitWallet = true
+		}
 	}
 
 	// true if keychain is available and we know that no wallet exists on it
@@ -103,7 +120,7 @@ extension WalletManager: WalletAuthenticator {
 	}
 
 	// true if the given transaction can be signed with biometric authentication
-	func canUseBiometrics(forTx: BRTxRef) -> Bool {
+	func canUseBiometrics(forTx: LndTransaction) -> Bool {
 		guard LAContext.canUseBiometrics else { return false }
 
 		do {
@@ -264,13 +281,13 @@ extension WalletManager: WalletAuthenticator {
 	}
 
 	// sign the given transaction using pin authentication
-	func signTransaction(_ tx: BRTxRef, forkId: Int = 0, pin: String) -> Bool {
+	func signTransaction(_ tx: LndTransaction, forkId: Int = 0, pin: String) -> Bool {
 		guard authenticate(pin: pin) else { return false }
 		return signTx(tx, forkId: forkId)
 	}
 
 	// sign the given transaction using biometric authentication
-	func signTransaction(_ tx: BRTxRef, biometricsPrompt: String, completion: @escaping (BiometricsResult) -> Void)
+	func signTransaction(_ tx: LndTransaction, biometricsPrompt: String, completion: @escaping (BiometricsResult) -> Void)
 	{
 		do {
 			let spendLimit: Int64 = try keychainItem(key: KeychainKey.spendLimit) ?? 0
@@ -292,7 +309,7 @@ extension WalletManager: WalletAuthenticator {
 	///   - tx: LItecoin Transaction
 	///   - completion: TransferCardResult
 	/// - Returns: Void
-	func signCardTransaction(_ tx: BRTxRef, completion: @escaping (TransferCardResult) -> Void) {
+	func signCardTransaction(_ tx: LndTransaction, completion: @escaping (TransferCardResult) -> Void) {
 		do {
 			guard let wallet = wallet
 			else {
@@ -407,8 +424,6 @@ extension WalletManager: WalletAuthenticator {
 		guard pin == "forceWipe" || authenticate(pin: pin) else { return false }
 
 		do {
-			lazyWallet = nil
-			lazyPeerManager = nil
 			if db != nil { sqlite3_close(db) }
 			db = nil
 			masterPubKey = BRMasterPubKey()
@@ -429,6 +444,7 @@ extension WalletManager: WalletAuthenticator {
 			try setKeychainItem(key: KeychainKey.masterPubKey, item: nil as Data?)
 			try setKeychainItem(key: KeychainKey.seed, item: nil as Data?)
 			try setKeychainItem(key: KeychainKey.mnemonic, item: nil as String?, authenticated: true)
+			lnd.deleteWallet()
 			NotificationCenter.default.post(name: .walletDidWipeNotification, object: nil)
 			return true
 		} catch {
@@ -441,8 +457,6 @@ extension WalletManager: WalletAuthenticator {
 		guard pin == "forceWipe" || authenticate(pin: pin) else { return false }
 
 		do {
-			lazyWallet = nil
-			lazyPeerManager = nil
 			if db != nil { sqlite3_close(db) }
 			db = nil
 			didInitWallet = false
@@ -524,7 +538,7 @@ extension WalletManager: WalletAuthenticator {
 		public static let pinUnlockTime = "PIN_UNLOCK_TIME"
 	}
 
-	private func signTx(_ tx: BRTxRef, forkId: Int = 0) -> Bool {
+	private func signTx(_ tx: LndTransaction, forkId: Int = 0) -> Bool {
 		return autoreleasepool {
 			do {
 				var seed = UInt512()
@@ -541,7 +555,7 @@ extension WalletManager: WalletAuthenticator {
 				}
 
 				BRBIP39DeriveKey(&seed, phrase, nil)
-				return wallet.signTransaction(tx, forkId: forkId, seed: &seed)
+				return wallet.signTransaction(tx)
 			} catch {
 				LWAnalytics.logEventWithParameters(itemName: ._20200111_UTST)
 				return false

@@ -12,9 +12,8 @@ struct TransactionStatusTuple {
 class Transaction {
 	// MARK: - Public
 
-	init?(_ tx: BRTxRef, walletManager: WalletManager, kvStore: BRReplicatedKVStore?, rate: Rate?) {
+	init?(_ tx: LndTransaction, walletManager: WalletManager, kvStore: BRReplicatedKVStore?, rate: Rate?) {
 		guard let wallet = walletManager.wallet else { return nil }
-		guard let peerManager = walletManager.peerManager else { return nil }
 
 		self.tx = tx
 		self.wallet = wallet
@@ -39,15 +38,13 @@ class Transaction {
 		timestamp = Int(tx.pointee.timestamp)
 
 		isValid = wallet.transactionIsValid(tx)
-		let transactionBlockHeight = tx.pointee.blockHeight
 		self.blockHeight = tx.pointee.blockHeight == UInt32(INT32_MAX) ? S.TransactionDetails.notConfirmedBlockHeightLabel.localize() : "\(tx.pointee.blockHeight)"
 
-		let blockHeight = peerManager.lastBlockHeight
-		confirms = transactionBlockHeight > blockHeight ? 0 : Int(blockHeight - transactionBlockHeight) + 1
-		status = makeStatus(tx, wallet: wallet, peerManager: peerManager, confirms: confirms, direction: direction)
+		confirms = Int(tx.confirms)
+		status = makeStatus(tx, wallet: wallet, confirms: confirms, direction: direction)
 
 		hash = tx.pointee.txHash.description
-		metaDataKey = tx.pointee.txHash.txKey
+		metaDataKey = tx.pointee.txHash
 
 		if let rate = rate, confirms < 6, direction == .received {
 			attemptCreateMetaData(tx: tx, rate: rate)
@@ -149,44 +146,31 @@ class Transaction {
 
 	// MARK: - Private
 
-	private let tx: BRTxRef
-	private let wallet: BRWallet
+	private let tx: LndTransaction
+	private let wallet: LndWallet
 	fileprivate let satoshis: UInt64
 	private var kvStore: BRReplicatedKVStore?
 
 	lazy var toAddress: String? = {
+		return self.tx.outputs[0].address // TODO: assumes first output is destination address. Delete this line when output.isOurs is working.
 		switch self.direction {
 		case .sent:
-
-			guard let output = self
-				.tx.outputs.filter({ output in
-					!self.wallet.containsAddress(output.updatedSwiftAddress)
-				})
-				.first
-
-			else {
+			guard let output = self.tx.outputs.filter({ output in !output.isOurs }).first else {
 				LWAnalytics.logEventWithParameters(itemName: ._20200112_ERR)
 				return nil
 			}
-
-			return output.updatedSwiftAddress
+			return output.address
 
 		case .received:
-			guard let output = self.tx.outputs.filter({ output in
-				self.wallet.containsAddress(output.updatedSwiftAddress)
-
-			}).first
-			else {
+			guard let output = self.tx.outputs.filter({ output in output.isOurs }).first else {
 				LWAnalytics.logEventWithParameters(itemName: ._20200112_ERR)
 				return nil
 			}
-			return output.updatedSwiftAddress
+			return output.address
 
 		case .moved:
-			guard let output = self.tx.outputs.filter({ output in
-				self.wallet.containsAddress(output.updatedSwiftAddress)
-			}).first else { return nil }
-			return output.updatedSwiftAddress
+			guard let output = self.tx.outputs.filter({ output in output.isOurs }).first else { return nil }
+			return output.address
 		}
 	}()
 
@@ -302,7 +286,7 @@ class Transaction {
 		return Transaction.shortDateFormatter.string(from: date)
 	}
 
-	var rawTransaction: BRTransaction {
+	var rawTransaction: LndTransaction {
 		return tx.pointee
 	}
 
@@ -322,7 +306,7 @@ class Transaction {
 		return df
 	}()
 
-	private func attemptCreateMetaData(tx: BRTxRef, rate: Rate) {
+	private func attemptCreateMetaData(tx: LndTransaction, rate: Rate) {
 		guard metaData == nil else { return }
 		let newData = TxMetaData(transaction: tx.pointee,
 		                         exchangeRate: rate.rate,
@@ -355,7 +339,7 @@ private extension String {
 	}
 }
 
-private func makeStatus(_ txRef: BRTxRef, wallet: BRWallet, peerManager: BRPeerManager, confirms: Int, direction: TransactionDirection) -> String
+private func makeStatus(_ txRef: LndTransaction, wallet: LndWallet, confirms: Int, direction: TransactionDirection) -> String
 {
 	let tx = txRef.pointee
 	guard wallet.transactionIsValid(txRef)
@@ -366,7 +350,7 @@ private func makeStatus(_ txRef: BRTxRef, wallet: BRWallet, peerManager: BRPeerM
 	if confirms < 6 {
 		var percentageString = ""
 		if confirms == 0 {
-			let relayCount = peerManager.relayCount(tx.txHash)
+			let relayCount = 2
 			if relayCount == 0 {
 				percentageString = "0%"
 			} else if relayCount == 1 {

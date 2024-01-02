@@ -192,6 +192,7 @@ struct C {
 	static let secondsInDay: TimeInterval = 86400
 	static let maxMoney: UInt64 = 84_000_000 * 100_000_000
 	static let satoshis: UInt64 = 100_000_000
+	static let lndQueue = "com.litecoin.lndqueue"
 	static let walletQueue = "com.litecoin.walletqueue"
 	static let btcCurrencyCode = "LTC"
 	static let null = "(null)"

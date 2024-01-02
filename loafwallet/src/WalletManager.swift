@@ -28,32 +28,13 @@ class WalletManager: BRWalletListener, BRPeerManagerListener {
 	internal let store: Store
 	var masterPubKey = BRMasterPubKey()
 	var earliestKeyTime: TimeInterval = 0
+	let lnd: LndManager
 
 	var userPreferredfpRate: Double = FalsePositiveRates.semiPrivate.rawValue
 
-	static let sharedInstance: WalletManager = {
-		var instance: WalletManager?
-		do {
-			instance = try WalletManager(store: Store(), dbPath: nil)
-		} catch {
-			NSLog("ERROR: Instance of WalletManager not initialized")
-		}
-		return instance!
-	}()
-
-	var wallet: BRWallet? {
-		guard masterPubKey != BRMasterPubKey() else { return nil }
-		guard let wallet = lazyWallet
-		else {
-			// stored transactions don't match masterPubKey
-			#if !Debug
-				do { try FileManager.default.removeItem(atPath: dbPath) } catch {}
-			#endif
-			return nil
-		}
-
-		didInitWallet = true
-		return wallet
+	var wallet: LndWallet? {
+		guard didInitWallet else { return nil }
+		return LndWallet(lnd: lnd)
 	}
 
 	var apiClient: BRAPIClient? {
@@ -62,25 +43,10 @@ class WalletManager: BRWalletListener, BRPeerManagerListener {
 	}
 
 	var peerManager: BRPeerManager? {
-		guard wallet != nil else { return nil }
-		return lazyPeerManager
+		return nil
 	}
 
-	// TODO: Pass the fpRate from User Preferences
-	internal lazy var lazyPeerManager: BRPeerManager? = {
-		if let wallet = self.wallet {
-			return BRPeerManager(wallet: wallet, earliestKeyTime: self.earliestKeyTime, blocks: self.loadBlocks(), peers: self.loadPeers(), listener: self, fpRate: FalsePositiveRates.semiPrivate.rawValue)
-		} else {
-			return nil
-		}
-	}()
-
-	internal lazy var lazyWallet: BRWallet? = BRWallet(transactions: self.loadTransactions(),
-	                                                   masterPubKey: self.masterPubKey,
-	                                                   listener: self)
-
 	private lazy var lazyAPIClient: BRAPIClient? = {
-		guard let wallet = self.wallet else { return nil }
 		return BRAPIClient(authenticator: self)
 	}()
 
@@ -125,6 +91,7 @@ class WalletManager: BRWalletListener, BRPeerManagerListener {
 	     earliestKeyTime: TimeInterval,
 	     dbPath: String? = nil,
 	     store: Store,
+	     lnd: LndManager,
 	     fpRate: Double) throws
 	{
 		self.masterPubKey = masterPubKey
@@ -133,6 +100,7 @@ class WalletManager: BRWalletListener, BRPeerManagerListener {
 			FileManager.default.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil,
 			                        create: false).appendingPathComponent("BreadWallet.sqlite").path
 		self.store = store
+		self.lnd = lnd
 		userPreferredfpRate = fpRate
 
 		// open sqlite database

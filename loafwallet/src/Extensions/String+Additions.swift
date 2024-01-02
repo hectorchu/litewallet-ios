@@ -14,7 +14,8 @@ extension String {
 
 	var isValidAddress: Bool {
 		guard lengthOfBytes(using: .utf8) > 0 else { return false }
-		return BRAddressIsValid(self) != 0
+		let decoded = try? SegwitAddrCoder().decode(hrp: E.isTestnet ? "tltc" : "ltc", addr: self)
+		return decoded != nil || BRAddressIsValid(self) != 0
 	}
 
 	var sanitized: String {
