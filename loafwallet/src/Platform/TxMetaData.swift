@@ -93,6 +93,7 @@ open class TxMetaData: BRKVStoreObject, BRCoding {
 		super.init(key: transaction.txHash, version: 0, lastModified: Date(), deleted: false, data: Data())
 		blockHeight = Int(transaction.blockHeight)
 		created = Date()
+		size = transaction.raw?.count ?? 0
 		self.exchangeRate = exchangeRate
 		self.exchangeRateCurrency = exchangeRateCurrency
 		self.feeRate = feeRate
